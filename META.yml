@@ -1,0 +1,23 @@
+---
+abstract: 'Interact with ping.fm from perl'
+author:
+  - 'Joe Higton'
+distribution_type: module
+generated_by: 'Module::Install version 0.77'
+license: perl
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
+name: Net-PingFM
+no_index:
+  directory:
+    - inc
+    - t
+requires:
+  LWP: 5.814
+  Moose: 0.55
+  Readonly: 1.03
+  XML::Twig: 3.32
+resources:
+  license: http://dev.perl.org/licenses/
+version: 0.1
