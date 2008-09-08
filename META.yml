@@ -14,11 +14,11 @@ no_index:
     - inc
     - t
 requires:
-  LWP: 5.814
+  LWP: 5.812
   Moose: 0.55
   Readonly: 1.03
-  XML::Twig: 3.32
+  XML::Twig: 3.26
   perl: 5.8.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.2
+version: 0.3
