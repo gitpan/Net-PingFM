@@ -21,6 +21,10 @@ Net::PingFM - Interact with ping.fm from perl
  $pfm->post( 'Testing Net::PingFM. Hours of fun..',
              { method => 'blog', title => 'Testing Testing!'} );
  
+ # get the list of services for the account:
+ my @services = $pfm->services;
+
+
 
 =head1 DESCRIPTION
 
@@ -39,9 +43,15 @@ Your user and application keys are required). Module will die without them.
 
 Additional constructor parameters:
 
-debug_mode => 1, # will stop posts from actually appearing
-dump_responses => 1 # will cause us to print our XML responses for debug
+=over
 
+=item * debug_mode => 1,
+ # will stop posts from actually appearing
+
+=item * dump_responses => 1
+# will cause us to print our XML responses for debug
+
+=back
 
 =cut
 
@@ -58,6 +68,9 @@ use LWP;
 use Hash::Util qw{ lock_hash };
 use XML::Twig;
 use Carp;
+
+# our internals:
+use Net::PingFM::Service;
 
 # moose attribute defininitions
 has api_key => (
@@ -96,7 +109,25 @@ has last_error => (
 );
 
 
-our $VERSION = '0.3';
+# supply a class to use in place of LWP ( for testing )
+has _use_lwp_replacement => (
+    is => 'rw',
+    default => 0,
+);
+
+# save our posts for test script inspection:
+has '_debug_save_last_post' => (
+    is => 'rw',
+    default => 0,
+);
+
+has '_debug_last_post' => (
+    is => 'rw',
+);
+
+
+
+our $VERSION = '0.4_001';
 
 # constants #
 Readonly my $PINGFM_URL => 'http://api.ping.fm/v1/';
@@ -105,9 +136,12 @@ Readonly my $UAGENT => 'PerlNetPingFM/' . $VERSION;
 # request definitions #
 Readonly my $USER_VALIDATE => 'user.validate';
 Readonly my $USER_POST => 'user.post';
+Readonly my $SERVICES => 'user.services';
+
 Readonly my %REQUESTS => (
     $USER_VALIDATE => 1,
     $USER_POST => 1,
+    $SERVICES => 1,
 );
 lock_hash( %REQUESTS );
 
@@ -141,29 +175,37 @@ sub user_validate{
  $pfm->post( $body , \%optional_params );
  $pfm->post( 'Hacking on Net::PingFM', { post_method => 'status' });
  $pfm->post( 'Posting using my default method' );
+ $pfm->post( 'Hacking on Net::PingFM, don\'t tell facebook', { service => 'twitter' });
 
-Post! We at least need a $body which is the body of the post we'll send to
-ping.fm.
+Make a post! We at least need a $body which is the body of the post we'll send
+to ping.fm.
 
 Optional parameter hashref can contain:
 
-post_method => What you would like to post to.
-method => shorthand for post_method
+=over
+
+=item * post_method => What you would like to post to.
+
+=item * method => shorthand for post_method
 
 Valid post_method's are blog, microblog, status and default. Default will use
 your default post method on ping.fm. Default is our default! 'method' is a
 less cumbersome option to type, if for some reason you choose to use both
 parameters then 'post_method' is the one which will be used.
 
-title => The title for the post. Ping.fm requires this for post_method 'blog' but we don't enforce that in the module!
+=item * title => The title for the post. Ping.fm requires this for post_method
+'blog' but we don't enforce that in the module!
 
-service => Just post to one service
+=item * service => Just post to one service use the service id or a
+Net::PingFM::Service object.
+
+=back
 
 =cut
-Readonly my %VALID_POST_PARAMS => (
+Readonly our %VALID_POST_PARAMS => (
     post_method => 1, title => 1, service => 1
 );
-Readonly my %VALID_POST_METHODS => (
+Readonly our %VALID_POST_METHODS => (
     default => 1, blog => 1, microblog => 1, status => 1,
 );
 
@@ -185,6 +227,13 @@ sub post {
     exists $VALID_POST_METHODS{ $ARGS{post_method} }
     	or confess 'Invalid post method: ' . $ARGS{post_method};
 
+
+    if ( $opts->{service}
+         && ( my $service = __parse_service_opt( $opts->{service} )))
+    {
+        $ARGS{ service } = $service;
+    }
+
     # copy in misc. options:
     for ( 'title', ) {
     	if ( exists $opts->{$_} ) {
@@ -195,6 +244,72 @@ sub post {
     # do the request!
     my $response = $self->_request( $USER_POST, \%ARGS );
     return __rsp_ok( $response );
+}
+
+# work out what we were given
+sub __parse_service_opt{
+    my $so = shift;
+
+    # maybe a service object?:
+    if ( ref  $so ) {
+        if ( $so->isa( 'Net::PingFM::Service' ) ) {
+            return $so->id;
+        }
+        confess 'Can\'t use a reference for your "service" unless that reference is a Net::PingFM::Service. What you provided seems to be a :'. ref $so;
+    }
+
+    # probably a service id:
+    return $so;
+}
+
+=head2 services
+
+ my @services = $pfm->services;
+
+Get a list of services for this account.
+
+Returns a list of Net::PingFM::Service objects
+
+=cut
+sub __service_xml_to_object;
+sub services{
+    my $self = shift;
+    my $rsp = $self->_request( $SERVICES );
+
+    # bail if we've failed:
+    if ( ! __rsp_ok( $rsp )) {
+        return;
+    }
+
+    # otherwise build our response
+    return map{ __service_xml_to_object }
+           $rsp->get_xpath( './services/service' );
+}
+
+sub __service_xml_to_object{
+    my @c_args;
+
+    # direct properties of the service object:
+    foreach my $prop ( 'id', 'name' ) {
+        if ( my $val = $_->att( $prop )) {
+            push @c_args, $prop => $val;
+        }
+    }
+
+    # deal with the strings:
+    foreach my $prop ( 'trigger', 'url', 'icon' ) {
+        if ( my $val = $_->first_child_text( $prop ) ) {
+            push @c_args, $prop => $val;
+        }
+    }
+
+    # now the list of methods:
+    if ( my $methods = $_->first_child_text( 'methods' ) ) {
+        push @c_args, 'methods' => [ split ',', $methods ];
+    }
+
+    # make object!
+    return Net::PingFM::Service->new( @c_args  );
 }
 
 =head2 last_error
@@ -225,7 +340,7 @@ sub _request{
         die join '', "Error parsing response for '$request': $@";
     }
 
-    # dump responses:
+    # dump response? 
     if ( $self->dump_responses ) {
         print $twig->sprint, "\n";
     }
@@ -237,9 +352,13 @@ sub _request{
         die 'Invalid XML response!';
     }
 
+    if ( $rsp->first_child_text( 'method' ) ne $request ) {
+        warn 'Response method doesn\'t match request method. Something has probably gone wrong!';
+    }
+
     # possibly stash an error message
     if ( ! __rsp_ok( $rsp ) ) {
-        if ( my $msg = $rsp->first_child_text('message') ) {
+        if ( my $msg = $rsp->first_child_text( 'message' ) ) {
             $self->_last_error( $msg );
         }
         else {
@@ -256,7 +375,12 @@ sub _web_request{
     my ( $request, $extra_params ) = @_
     	or confess 'Need $request and $extra_params';
 
-    my $lwp = $self->_lwp();
+    my $lwp;
+
+    # get our lwp user agent
+    unless ( $lwp = $self->_use_lwp_replacement ) {
+        $lwp = $self->_lwp();
+    }
 
     # form always takes user & api keys:
     my %form = (
@@ -266,7 +390,15 @@ sub _web_request{
         %$extra_params,
     );
 
+    # are we recording things for tests?
+    if ( $self->_debug_save_last_post ) {
+        $self->_debug_last_post( \%form );
+    }
+
+    # make a url for this request:
     my $url =  __request_url( $request );
+
+    # POST!
     my $response = $lwp->post( $url, \%form );
 
     # handle failure:
@@ -324,6 +456,12 @@ feel like it!
 =head1 API INFO
 
 http://groups.google.com/group/pingfm-developers/web/api-documentation
+
+=head1 DEVELOPMENT
+
+Follow development of this library (and or fork it!) on github:
+
+http://github.com/draxil/net-pingfm/
 
 =head1 AUTHOR
 
