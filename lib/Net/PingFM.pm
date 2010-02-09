@@ -131,7 +131,7 @@ has '_debug_last_post' => (
 
 
 
-our $VERSION = '0.4';
+our $VERSION = '0.5_001';
 
 # constants #
 Readonly my $PINGFM_URL => 'http://api.ping.fm/v1/';
@@ -309,7 +309,10 @@ sub __service_xml_to_object{
 
     # now the list of methods:
     if ( my $methods = $_->first_child_text( 'methods' ) ) {
-        push @c_args, 'methods' => [ split ',', $methods ];
+        push @c_args, 'methods' => [ grep{
+            $VALID_POST_METHODS{ $_ } or warn "I don\'t understand post method $_, ignore";
+            $VALID_POST_METHODS{ $_ };
+        } split ',', $methods ];
     }
 
     # make object!

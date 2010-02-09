@@ -21,4 +21,5 @@ requires:
   perl: 5.8.0
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.4
+  repository: http://github.com/draxil/net-pingfm
+version: 0.5_001
