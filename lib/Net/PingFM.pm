@@ -75,6 +75,7 @@ use Carp;
 
 # our internals:
 use Net::PingFM::Service;
+use Net::PingFM::Trigger;
 
 # moose attribute defininitions
 has api_key => (
@@ -131,7 +132,7 @@ has '_debug_last_post' => (
 
 
 
-our $VERSION = '0.5';
+our $VERSION = '0.6_001';
 
 # constants #
 Readonly my $PINGFM_URL => 'http://api.ping.fm/v1/';
@@ -141,11 +142,18 @@ Readonly my $UAGENT => 'PerlNetPingFM/' . $VERSION;
 Readonly my $USER_VALIDATE => 'user.validate';
 Readonly my $USER_POST => 'user.post';
 Readonly my $SERVICES => 'user.services';
+Readonly my $TRIGGERS => 'user.triggers';
+Readonly my $USER_TPOST => 'user.tpost';
 
+# Make a hash of valid requests
 Readonly my %REQUESTS => (
-    $USER_VALIDATE => 1,
-    $USER_POST => 1,
-    $SERVICES => 1,
+    map{ $_ => 1 } (
+        $USER_VALIDATE,
+        $USER_POST,
+        $SERVICES,
+        $TRIGGERS,
+        $USER_TPOST,
+    )
 );
 lock_hash( %REQUESTS );
 
@@ -238,12 +246,7 @@ sub post {
         $ARGS{ service } = $service;
     }
 
-    # copy in misc. options:
-    for ( 'title', ) {
-    	if ( exists $opts->{$_} ) {
-            $ARGS{$_}  = $opts->{$_};
-        }
-    }
+    __populate_common_post_args( $opts, \%ARGS );
 
     # do the request!
     my $response = $self->_request( $USER_POST, \%ARGS );
@@ -264,6 +267,73 @@ sub __parse_service_opt{
 
     # probably a service id:
     return $so;
+}
+
+sub __populate_common_post_args{
+    my( $opts, $post_args ) = @_;
+
+    # copy in misc. options:
+    for ( 'title', ) {
+    	if ( exists $opts->{$_} ) {
+            $post_args->{$_}  = $opts->{$_};
+        }
+    }
+
+    return;
+}
+
+=head2 trigger_post
+
+$pfm->trigger_post( $trigger, $body, $opts );
+$pfm->trigger_post( 'tw', 'Testing Ping.fm triggers!' );
+
+Post to a "ping.fm" trigger. The $trigger can be a trigger id (as in the
+textual id of the trigger) or a Net::PingFM::Trigger object
+
+=cut
+sub trigger_post{
+    my $self = shift;
+    my ( $trigger, $body, $opts ) = @_;
+
+    # vet the required arguments:
+    unless ( $trigger && $body ) {
+        confess 'trigger_post usage: $pfm->trigger_post( $trigger, $body )';
+    }
+
+    $opts ||= {};
+
+    # check the options hash:
+    unless ( ref $opts eq 'HASH' ) {
+        confess 'trigger_post options should be a hash reference';
+    }
+
+    # now start building our request args:
+    my %ARGS;
+
+    $ARGS{body} = $body;
+
+    # populate the trigger option:
+    $ARGS{trigger} = __parse_trigger_option( $trigger );
+
+    __populate_common_post_args( $opts, \%ARGS );
+
+    # do the request!
+    my $response = $self->_request( $USER_TPOST, \%ARGS );
+    return __rsp_ok( $response );
+}
+
+sub __parse_trigger_option{
+    my( $trig ) = @_;
+
+    if ( ref $trig ) {
+        # does this look like a trigger object?
+        if( $trig->isa( 'Net::PingFM::Trigger' ) ) {
+            return $trig->id;
+        }
+        confess 'You provided a reference for your trigger, but it doesn\'t look like a Net::PingFM::Trigger object';
+    }
+
+    return $trig;
 }
 
 =head2 services
@@ -318,6 +388,43 @@ sub __service_xml_to_object{
     # make object!
     return Net::PingFM::Service->new( @c_args  );
 }
+
+=head2 triggers
+
+Grab the list of "triggers" from ping.fm. These allow you to post to your
+ping.fm groups, allowing you to post to multiple services at once.
+
+Returns a list of L<Net::PingFM::Trigger> objects describing the triggers.
+
+=cut
+sub __trigger_xml_to_object;
+sub triggers{
+    my $self = shift;
+
+    my $rsp = $self->_request( $TRIGGERS );
+
+    # bail if we've failed:
+    if ( ! __rsp_ok( $rsp )) {
+        return;
+    }
+
+    return map{ __trigger_xml_to_object }
+           $rsp->get_xpath( './triggers/trigger' );
+}
+
+sub __trigger_xml_to_object{
+    my @c_args;
+
+    # attributes from the trigger that we're interested in:
+    foreach my $prop ( 'id', 'method' ) {
+        if ( my $val = $_->att( $prop )) {
+            push @c_args, $prop => $val;
+        }
+    }
+
+    return Net::PingFM::Trigger->new( @c_args );
+}
+
 
 =head2 last_error
 

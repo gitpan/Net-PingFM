@@ -1,19 +1,14 @@
 .shipit
 Changes
-inc/Module/Install.pm
-inc/Module/Install/Base.pm
-inc/Module/Install/Can.pm
-inc/Module/Install/Fetch.pm
-inc/Module/Install/Makefile.pm
-inc/Module/Install/Metadata.pm
-inc/Module/Install/Win32.pm
-inc/Module/Install/WriteAll.pm
 lib/Net/PingFM.pm
 lib/Net/PingFM/Service.pm
+lib/Net/PingFM/Trigger.pm
 Makefile.PL
 MANIFEST			This list of files
 MANIFEST.SKIP
 META.yml
+Readme
 t/basics_offline.t
 t/fake_online.t
 t/online.t
+t/triggers.t
