@@ -132,7 +132,7 @@ has '_debug_last_post' => (
 
 
 
-our $VERSION = '0.6_002';
+our $VERSION = '0.6';
 
 # constants #
 Readonly my $PINGFM_URL => 'http://api.ping.fm/v1/';
@@ -284,8 +284,8 @@ sub __populate_common_post_args{
 
 =head2 trigger_post
 
-$pfm->trigger_post( $trigger, $body, $opts );
-$pfm->trigger_post( 'tw', 'Testing Ping.fm triggers!' );
+ $pfm->trigger_post( $trigger, $body, $opts );
+ $pfm->trigger_post( 'tw', 'Testing Ping.fm triggers!' );
 
 Post to a "ping.fm" trigger. The $trigger can be a trigger id (as in the
 textual id of the trigger) or a Net::PingFM::Trigger object
